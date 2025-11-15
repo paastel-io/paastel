@@ -10,8 +10,8 @@ use crate::graphql::query::QueryRoot;
 use crate::graphql::state::AppState;
 
 pub mod domain;
-pub mod infrastructure;
 pub mod graphql;
+pub mod infrastructure;
 
 type AppSchema = Schema<QueryRoot, MutationRoot, EmptySubscription>;
 
