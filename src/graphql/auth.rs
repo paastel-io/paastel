@@ -5,4 +5,3 @@ use crate::domain::models::User;
 pub struct CurrentUser {
     pub user: User,
 }
-

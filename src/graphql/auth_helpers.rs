@@ -3,7 +3,9 @@ use axum::http::{self, header::AUTHORIZATION};
 
 use crate::graphql::auth::CurrentUser;
 use crate::graphql::state::AppState;
-use crate::infrastructure::repositories::{AuthTokenRepository, UserRepository};
+use crate::infrastructure::repositories::{
+    AuthTokenRepository, UserRepository,
+};
 
 /// Get the currently authenticated user from the Authorization header.
 ///
@@ -42,4 +44,3 @@ pub async fn get_current_user(ctx: &Context<'_>) -> GqlResult<CurrentUser> {
 
     Ok(CurrentUser { user })
 }
-
