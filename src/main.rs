@@ -5,13 +5,9 @@ use axum::{Router, extract::State, http::HeaderMap, routing::post};
 use sqlx::PgPool;
 use tracing_subscriber::EnvFilter;
 
-use crate::graphql::mutation::MutationRoot;
-use crate::graphql::query::QueryRoot;
-use crate::graphql::state::AppState;
-
-pub mod domain;
-pub mod graphql;
-pub mod infrastructure;
+use paastel::graphql::mutation::MutationRoot;
+use paastel::graphql::query::QueryRoot;
+use paastel::graphql::state::AppState;
 
 type AppSchema = Schema<QueryRoot, MutationRoot, EmptySubscription>;
 
