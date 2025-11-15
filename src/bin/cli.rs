@@ -51,7 +51,7 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-     /// Authentication commands (login, logout, status)
+    /// Authentication commands (login, logout, status)
     #[command(subcommand)]
     Auth(AuthCommand),
 
@@ -159,7 +159,8 @@ enum AppCommand {
 // ---------------------------
 
 fn paastel_config_dir() -> Result<PathBuf> {
-    let base = dirs::config_dir().context("Could not determine config directory")?;
+    let base =
+        dirs::config_dir().context("Could not determine config directory")?;
     Ok(base.join("paastel"))
 }
 
@@ -177,21 +178,26 @@ fn load_config() -> Result<Config> {
         return Ok(Config::default());
     }
 
-    let data = fs::read_to_string(&path)
-        .with_context(|| format!("Failed to read config file at {}", path.display()))?;
-    let cfg: Config = toml::from_str(&data).context("Failed to parse config.toml")?;
+    let data = fs::read_to_string(&path).with_context(|| {
+        format!("Failed to read config file at {}", path.display())
+    })?;
+    let cfg: Config =
+        toml::from_str(&data).context("Failed to parse config.toml")?;
     Ok(cfg)
 }
 
 fn save_config(cfg: &Config) -> Result<()> {
     let dir = paastel_config_dir()?;
-    fs::create_dir_all(&dir)
-        .with_context(|| format!("Failed to create config dir at {}", dir.display()))?;
+    fs::create_dir_all(&dir).with_context(|| {
+        format!("Failed to create config dir at {}", dir.display())
+    })?;
 
     let path = config_path()?;
-    let data = toml::to_string_pretty(cfg).context("Failed to serialize config")?;
-    fs::write(&path, data)
-        .with_context(|| format!("Failed to write config file at {}", path.display()))?;
+    let data =
+        toml::to_string_pretty(cfg).context("Failed to serialize config")?;
+    fs::write(&path, data).with_context(|| {
+        format!("Failed to write config file at {}", path.display())
+    })?;
     Ok(())
 }
 
@@ -201,21 +207,26 @@ fn load_session() -> Result<Session> {
         return Ok(Session::default());
     }
 
-    let data = fs::read_to_string(&path)
-        .with_context(|| format!("Failed to read session file at {}", path.display()))?;
-    let sess: Session = toml::from_str(&data).context("Failed to parse session.toml")?;
+    let data = fs::read_to_string(&path).with_context(|| {
+        format!("Failed to read session file at {}", path.display())
+    })?;
+    let sess: Session =
+        toml::from_str(&data).context("Failed to parse session.toml")?;
     Ok(sess)
 }
 
 fn save_session(sess: &Session) -> Result<()> {
     let dir = paastel_config_dir()?;
-    fs::create_dir_all(&dir)
-        .with_context(|| format!("Failed to create config dir at {}", dir.display()))?;
+    fs::create_dir_all(&dir).with_context(|| {
+        format!("Failed to create config dir at {}", dir.display())
+    })?;
 
     let path = session_path()?;
-    let data = toml::to_string_pretty(sess).context("Failed to serialize session")?;
-    fs::write(&path, data)
-        .with_context(|| format!("Failed to write session file at {}", path.display()))?;
+    let data =
+        toml::to_string_pretty(sess).context("Failed to serialize session")?;
+    fs::write(&path, data).with_context(|| {
+        format!("Failed to write session file at {}", path.display())
+    })?;
     Ok(())
 }
 
@@ -281,7 +292,8 @@ async fn api_login(
         anyhow::bail!("Login failed with status {}", res.status());
     }
 
-    let body: LoginResponse = res.json().await.context("Failed to parse login response")?;
+    let body: LoginResponse =
+        res.json().await.context("Failed to parse login response")?;
     Ok(body)
 }
 
@@ -310,7 +322,8 @@ async fn api_create_org(
         anyhow::bail!("Create org failed with status {}", res.status());
     }
 
-    let body: OrganizationResponse = res.json().await.context("Failed to parse org response")?;
+    let body: OrganizationResponse =
+        res.json().await.context("Failed to parse org response")?;
     Ok(body)
 }
 
@@ -332,11 +345,7 @@ async fn api_create_team(
     let res = client
         .post(&url)
         .bearer_auth(&cfg.auth.token)
-        .json(&Payload {
-            org_id,
-            name,
-            slug,
-        })
+        .json(&Payload { org_id, name, slug })
         .send()
         .await
         .context("Failed to send create team request")?;
@@ -345,7 +354,8 @@ async fn api_create_team(
         anyhow::bail!("Create team failed with status {}", res.status());
     }
 
-    let body: TeamResponse = res.json().await.context("Failed to parse team response")?;
+    let body: TeamResponse =
+        res.json().await.context("Failed to parse team response")?;
     Ok(body)
 }
 
@@ -372,13 +382,7 @@ async fn api_create_app(
     let res = client
         .post(&url)
         .bearer_auth(&cfg.auth.token)
-        .json(&Payload {
-            org_id,
-            team_id,
-            name,
-            slug,
-            runtime,
-        })
+        .json(&Payload { org_id, team_id, name, slug, runtime })
         .send()
         .await
         .context("Failed to send create app request")?;
@@ -387,7 +391,8 @@ async fn api_create_app(
         anyhow::bail!("Create app failed with status {}", res.status());
     }
 
-    let body: AppResponse = res.json().await.context("Failed to parse app response")?;
+    let body: AppResponse =
+        res.json().await.context("Failed to parse app response")?;
     Ok(body)
 }
 
@@ -417,11 +422,7 @@ async fn main() -> Result<()> {
 
 async fn handle_auth(cmd: AuthCommand, client: &Client) -> Result<()> {
     match cmd {
-        AuthCommand::Login {
-            email,
-            password,
-            base_url,
-        } => {
+        AuthCommand::Login { email, password, base_url } => {
             let email = match email {
                 Some(e) => e,
                 None => prompt("Email: ")?,
@@ -441,7 +442,8 @@ async fn handle_auth(cmd: AuthCommand, client: &Client) -> Result<()> {
                 cfg.auth.base_url = "http://localhost:3000".to_string();
             }
 
-            let res = api_login(client, &cfg.auth.base_url, &email, &password).await?;
+            let res = api_login(client, &cfg.auth.base_url, &email, &password)
+                .await?;
             cfg.auth.token = res.token;
 
             save_config(&cfg)?;
@@ -498,7 +500,9 @@ async fn handle_org(cmd: OrgCommand, client: &Client) -> Result<()> {
         OrgCommand::Use { id, slug } => {
             let cfg = ensure_authenticated()?;
             if cfg.auth.token.is_empty() {
-                anyhow::bail!("You must be authenticated to use an organization.");
+                anyhow::bail!(
+                    "You must be authenticated to use an organization."
+                );
             }
 
             let mut sess = load_session().unwrap_or_default();
@@ -539,12 +543,14 @@ async fn handle_team(cmd: TeamCommand, client: &Client) -> Result<()> {
             let cfg = ensure_authenticated()?;
             let sess = load_session().unwrap_or_default();
 
-            let org_id = sess
-                .context
-                .organization_id
-                .ok_or_else(|| anyhow::anyhow!("No organization selected. Use `paastel org use` first."))?;
+            let org_id = sess.context.organization_id.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "No organization selected. Use `paastel org use` first."
+                )
+            })?;
 
-            let team = api_create_team(client, &cfg, org_id, &name, &slug).await?;
+            let team =
+                api_create_team(client, &cfg, org_id, &name, &slug).await?;
 
             println!(
                 "Team created: {} (id: {}, slug: {})",
@@ -561,9 +567,12 @@ async fn handle_team(cmd: TeamCommand, client: &Client) -> Result<()> {
             let _cfg = ensure_authenticated()?;
             let mut sess = load_session().unwrap_or_default();
 
-            if sess.context.organization_id.is_none() && sess.context.organization_slug.is_none()
+            if sess.context.organization_id.is_none()
+                && sess.context.organization_slug.is_none()
             {
-                anyhow::bail!("No organization selected. Use `paastel org use` first.");
+                anyhow::bail!(
+                    "No organization selected. Use `paastel org use` first."
+                );
             }
 
             match (id, slug) {
@@ -608,7 +617,10 @@ fn handle_context(cmd: ContextCommand) -> Result<()> {
 
             println!();
             println!("Context:");
-            match (&sess.context.organization_id, &sess.context.organization_slug) {
+            match (
+                &sess.context.organization_id,
+                &sess.context.organization_slug,
+            ) {
                 (Some(id), Some(slug)) => {
                     println!("  Organization: {} (id: {})", slug, id);
                 }
@@ -641,8 +653,9 @@ fn handle_context(cmd: ContextCommand) -> Result<()> {
         ContextCommand::Clear => {
             let path = session_path()?;
             if path.exists() {
-                fs::remove_file(&path)
-                    .with_context(|| format!("Failed to remove session file {}", path.display()))?;
+                fs::remove_file(&path).with_context(|| {
+                    format!("Failed to remove session file {}", path.display())
+                })?;
                 println!("Session cleared.");
             } else {
                 println!("Session not found. Nothing to clear.");
@@ -663,18 +676,27 @@ async fn handle_app(cmd: AppCommand, client: &Client) -> Result<()> {
             let cfg = ensure_authenticated()?;
             let sess = load_session().unwrap_or_default();
 
-            let org_id = sess
-                .context
-                .organization_id
-                .ok_or_else(|| anyhow::anyhow!("No organization selected. Use `paastel org use` first."))?;
-            let team_id = sess
-                .context
-                .team_id
-                .ok_or_else(|| anyhow::anyhow!("No team selected. Use `paastel team use` first."))?;
+            let org_id = sess.context.organization_id.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "No organization selected. Use `paastel org use` first."
+                )
+            })?;
+            let team_id = sess.context.team_id.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "No team selected. Use `paastel team use` first."
+                )
+            })?;
 
-            let app =
-                api_create_app(client, &cfg, org_id, team_id, &name, &slug, runtime.as_deref())
-                    .await?;
+            let app = api_create_app(
+                client,
+                &cfg,
+                org_id,
+                team_id,
+                &name,
+                &slug,
+                runtime.as_deref(),
+            )
+            .await?;
 
             println!(
                 "Application created: {} (id: {}, slug: {})",
@@ -693,10 +715,14 @@ async fn handle_app(cmd: AppCommand, client: &Client) -> Result<()> {
 fn ensure_authenticated() -> Result<Config> {
     let cfg = load_config().unwrap_or_default();
     if cfg.auth.token.is_empty() {
-        anyhow::bail!("You must be authenticated. Run `paastel auth login` first.");
+        anyhow::bail!(
+            "You must be authenticated. Run `paastel auth login` first."
+        );
     }
     if cfg.auth.base_url.is_empty() {
-        anyhow::bail!("Base URL is not configured. Set it during login or in config.toml.");
+        anyhow::bail!(
+            "Base URL is not configured. Set it during login or in config.toml."
+        );
     }
     Ok(cfg)
 }
@@ -708,9 +734,7 @@ fn prompt(label: &str) -> Result<String> {
     io::stdout().flush().ok();
 
     let mut buf = String::new();
-    io::stdin()
-        .read_line(&mut buf)
-        .context("Failed to read from stdin")?;
+    io::stdin().read_line(&mut buf).context("Failed to read from stdin")?;
     Ok(buf.trim().to_string())
 }
 
@@ -718,4 +742,3 @@ fn prompt_password(label: &str) -> Result<String> {
     // For now, simple prompt. You can switch to rpassword crate if you want hidden input.
     prompt(label)
 }
-

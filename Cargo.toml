@@ -29,3 +29,9 @@ name = "cli"
 path = "src/bin/cli.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "export-schema"
+path = "src/bin/export_schema.rs"
+test = false
+doc = false
