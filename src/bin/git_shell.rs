@@ -9,55 +9,47 @@ use anyhow::{Context, Result, anyhow};
 /// Can be overridden with PAASTEL_GIT_ROOT.
 const DEFAULT_GIT_ROOT: &str = "/var/lib/paastel/git";
 
-fn main() -> Result<()> {
-    // 1) Read the original SSH command
-    //    When called by sshd, this comes from SSH_ORIGINAL_COMMAND.
-    //    For local testing, you can pass it as the first CLI argument.
-    let original_command = env::var("SSH_ORIGINAL_COMMAND")
-        .ok()
-        .or_else(|| env::args().nth(1))
-        .ok_or_else(|| {
-            anyhow!(
-                "Missing SSH_ORIGINAL_COMMAND and no CLI argument provided"
-            )
-        })?;
+fn main() {
+    if let Err(err) = run() {
+        eprintln!("paastel-git-shell error: {err}");
+        std::process::exit(1);
+    }
+}
 
-    // 2) Parse it: we expect "git-receive-pack 'path.git'" or "git-upload-pack 'path.git'"
+fn run() -> Result<()> {
+    let original_command = match env::var("SSH_ORIGINAL_COMMAND").ok() {
+        Some(cmd) => cmd,
+        None => {
+            eprintln!("PaaStel git endpoint. Interactive shell is not available.");
+            return Ok(());
+        }
+    };
+
     let (git_cmd, repo_path_raw) = parse_git_command(&original_command)?;
 
-    // 3) Sanitize and build the full repo path
-    let root = env::var("PAASTEL_GIT_ROOT")
-        .unwrap_or_else(|_| DEFAULT_GIT_ROOT.to_string());
+    let root = env::var("PAASTEL_GIT_ROOT").unwrap_or_else(|_| DEFAULT_GIT_ROOT.to_string());
     let repo_rel = sanitize_repo_path(&repo_path_raw)?;
     let repo_full = Path::new(&root).join(repo_rel);
 
-    // Ensure parent directories exist
     if let Some(parent) = repo_full.parent() {
-        fs::create_dir_all(parent).with_context(|| {
-            format!("Failed to create parent dir {}", parent.display())
-        })?;
+        fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create parent dir {}", parent.display()))?;
     }
 
-    // 4) If it's a receive-pack and the repo doesn't exist yet, init it as a bare repo
     if git_cmd == "git-receive-pack" && !repo_full.exists() {
         init_bare_repo(&repo_full)?;
     }
 
-    // 5) Delegate to the real git-* command, wiring stdin/stdout/stderr
     let status = Command::new(git_cmd)
         .arg(repo_full.to_str().ok_or_else(|| anyhow!("Invalid repo path"))?)
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .status()
-        .with_context(|| format!("Failed to spawn {}", git_cmd))?;
+        .with_context(|| format!("Failed to spawn {git_cmd}"))?;
 
     if !status.success() {
-        return Err(anyhow!(
-            "{} exited with status code: {}",
-            git_cmd,
-            status
-        ));
+        return Err(anyhow!("{git_cmd} exited with status code: {status}"));
     }
 
     Ok(())

@@ -1,9 +1,10 @@
 services:
   git:
-    build:
-      context: .
-      dockerfile: Dockerfile.git-sshd
-    container_name: paastel-git
+    image: paastel-git:latest
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile.git-sshd
+    # container_name: paastel-git
     restart: unless-stopped
     ports:
       - "2222:22"

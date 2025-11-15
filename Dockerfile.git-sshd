@@ -18,7 +18,9 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Create git user
-RUN useradd -m -d /home/git -s /bin/bash git
+RUN useradd -m -d /home/git -s /bin/bash git && \
+    passwd -d git && \
+    usermod -U git
 
 # Git root directory (shared via volume)
 RUN mkdir -p /var/lib/paastel/git && \
