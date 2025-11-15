@@ -1,7 +1,7 @@
 use anyhow::Result;
 use async_graphql::{EmptySubscription, Schema};
 use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
-use axum::{Router, extract::State, routing::post};
+use axum::{Router, extract::State, http::HeaderMap, routing::post};
 use sqlx::PgPool;
 use tracing_subscriber::EnvFilter;
 
@@ -9,20 +9,9 @@ use crate::graphql::mutation::MutationRoot;
 use crate::graphql::query::QueryRoot;
 use crate::graphql::state::AppState;
 
-pub mod domain {
-    pub mod models;
-}
-
-pub mod infrastructure {
-    pub mod repositories;
-}
-
-pub mod graphql {
-    pub mod mutation;
-    pub mod query;
-    pub mod state;
-    pub mod types;
-}
+pub mod domain;
+pub mod infrastructure;
+pub mod graphql;
 
 type AppSchema = Schema<QueryRoot, MutationRoot, EmptySubscription>;
 
@@ -57,9 +46,12 @@ async fn main() -> Result<()> {
 
 async fn graphql_handler(
     State(schema): State<AppSchema>,
+    headers: HeaderMap,
     req: GraphQLRequest,
 ) -> GraphQLResponse {
-    schema.execute(req.into_inner()).await.into()
+    let mut request = req.into_inner();
+    request = request.data(headers);
+    schema.execute(request).await.into()
 }
 
 /// Simple GraphiQL-like playground using async-graphql built-in HTML.

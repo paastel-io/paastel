@@ -1,24 +1,80 @@
 use async_graphql::{Context, Object, Result as GqlResult};
+use rand::RngCore;
 
-use crate::domain::models::{NewOrganization, NewTeam};
+use crate::domain::models::{NewAuthToken, NewOrganization, NewTeam, NewUser};
+use crate::graphql::auth_helpers::get_current_user;
 use crate::graphql::state::AppState;
 use crate::graphql::types::{
-    CreateOrganizationInput, CreateTeamInput, OrganizationGql, TeamGql,
+    AccessTokenGql, CreateOrganizationInput, CreateTeamInput, OrganizationGql,
+    RegisterUserInput, RegisterUserPayload, TeamGql,
 };
 use crate::infrastructure::repositories::{
-    OrganizationRepository, TeamRepository,
+    AuthTokenRepository, OrganizationRepository, TeamRepository,
+    UserRepository,
 };
 
 pub struct MutationRoot;
 
 #[Object]
 impl MutationRoot {
+    /// Register a new user and return a personal access token for CLI usage.
+    ///
+    /// This mutation is unauthenticated (bootstrap). In a real system you may
+    /// want to restrict or protect this in some way.
+    async fn register_user(
+        &self,
+        ctx: &Context<'_>,
+        input: RegisterUserInput,
+    ) -> GqlResult<RegisterUserPayload> {
+        let state = ctx.data::<AppState>()?;
+
+        let user_repo = UserRepository::new(state.pool.clone());
+        let token_repo = AuthTokenRepository::new(state.pool.clone());
+
+        // TODO: hash password properly (argon2, bcrypt, etc.)
+        let new_user = NewUser {
+            name: input.name,
+            email: input.email,
+            password_hash: input.password, // placeholder
+        };
+
+        let user = user_repo
+            .create(new_user)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+        // generate random token (32 bytes hex)
+        let token_string = generate_token_string();
+
+        let new_token = NewAuthToken {
+            user_id: user.id,
+            token: token_string.clone(),
+            description: Some("CLI default token".to_string()),
+        };
+
+        token_repo
+            .create(new_token)
+            .await
+            .map_err(|e| async_graphql::Error::new(e.to_string()))?;
+
+        Ok(RegisterUserPayload {
+            user: user.into(),
+            token: AccessTokenGql {
+                token: token_string,
+                description: Some("CLI default token".to_string()),
+            },
+        })
+    }
+
     /// Create a new organization.
     async fn create_organization(
         &self,
         ctx: &Context<'_>,
         input: CreateOrganizationInput,
     ) -> GqlResult<OrganizationGql> {
+        // ensure we have a valid user
+        let _current = get_current_user(ctx).await?;
+
         let state = ctx.data::<AppState>()?;
         let repo = OrganizationRepository::new(state.pool.clone());
 
@@ -42,6 +98,9 @@ impl MutationRoot {
         ctx: &Context<'_>,
         input: CreateTeamInput,
     ) -> GqlResult<TeamGql> {
+        // ensure we have a valid user
+        let _current = get_current_user(ctx).await?;
+
         let state = ctx.data::<AppState>()?;
         let repo = TeamRepository::new(state.pool.clone());
 
@@ -60,4 +119,11 @@ impl MutationRoot {
 
         Ok(team.into())
     }
+}
+
+fn generate_token_string() -> String {
+    // 32 random bytes -> hex string (64 chars)
+    let mut bytes = [0u8; 32];
+    rand::rng().fill_bytes(&mut bytes);
+    hex::encode(bytes)
 }

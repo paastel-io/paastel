@@ -3,6 +3,53 @@ use sqlx::{PgPool, query_as};
 
 use crate::domain::models::*;
 
+#[derive(Clone)]
+pub struct AuthTokenRepository {
+    pool: PgPool,
+}
+
+impl AuthTokenRepository {
+    pub fn new(pool: PgPool) -> Self {
+        Self { pool }
+    }
+
+    pub async fn create(&self, new_token: NewAuthToken) -> Result<AuthToken> {
+        let token = query_as::<_, AuthToken>(
+            r#"
+            INSERT INTO auth_tokens (user_id, token, description)
+            VALUES ($1, $2, $3)
+            RETURNING *
+            "#,
+        )
+        .bind(new_token.user_id)
+        .bind(new_token.token)
+        .bind(new_token.description)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(token)
+    }
+
+    pub async fn find_valid_by_token(
+        &self,
+        token: &str,
+    ) -> Result<Option<AuthToken>> {
+        let row = query_as::<_, AuthToken>(
+            r#"
+            SELECT *
+            FROM auth_tokens
+            WHERE token = $1
+              AND revoked_at IS NULL
+            "#,
+        )
+        .bind(token)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row)
+    }
+}
+
 // ---------- OrganizationRepository ----------
 
 #[derive(Clone)]

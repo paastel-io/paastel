@@ -1,6 +1,24 @@
 use async_graphql::{InputObject, SimpleObject};
 
-use crate::domain::models::{Organization as OrgModel, Team as TeamModel};
+use crate::domain::models::{
+    Organization as OrgModel, Team as TeamModel, User,
+};
+
+// ------------ User ------------
+
+#[derive(Debug, Clone, SimpleObject)]
+#[graphql(name = "User")]
+pub struct UserGql {
+    pub id: i64,
+    pub name: String,
+    pub email: String,
+}
+
+impl From<User> for UserGql {
+    fn from(u: User) -> Self {
+        Self { id: u.id, name: u.name, email: u.email }
+    }
+}
 
 // GraphQL Organization exposed type
 #[derive(Debug, Clone, SimpleObject)]
@@ -46,7 +64,31 @@ impl From<TeamModel> for TeamGql {
     }
 }
 
+// ------------ AuthToken (GraphQL) ------------
+
+#[derive(Debug, Clone, SimpleObject)]
+#[graphql(name = "AccessToken")]
+pub struct AccessTokenGql {
+    /// Token string that the CLI must store and send in the Authorization header.
+    pub token: String,
+    pub description: Option<String>,
+}
+
 // -------- Inputs --------
+
+#[derive(Debug, InputObject)]
+pub struct RegisterUserInput {
+    pub name: String,
+    pub email: String,
+    /// Plain password for now. You should hash it before storing.
+    pub password: String,
+}
+
+#[derive(Debug, SimpleObject)]
+pub struct RegisterUserPayload {
+    pub user: UserGql,
+    pub token: AccessTokenGql,
+}
 
 #[derive(Debug, InputObject)]
 pub struct CreateOrganizationInput {

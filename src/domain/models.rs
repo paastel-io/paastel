@@ -80,6 +80,26 @@ pub enum BuildTrigger {
     Api,
 }
 
+// ---------------- Auth tokens ----------------
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct AuthToken {
+    pub id: i64,
+    pub user_id: i64,
+    pub token: String,
+    pub description: Option<String>,
+    pub created_at: OffsetDateTime,
+    pub last_used_at: Option<OffsetDateTime>,
+    pub revoked_at: Option<OffsetDateTime>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NewAuthToken {
+    pub user_id: i64,
+    pub token: String,
+    pub description: Option<String>,
+}
+
 // ---------- Organizations ----------
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
