@@ -15,6 +15,7 @@ struct Config {
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 struct AuthConfig {
+    /// Full GraphQL endpoint, e.g. "http://localhost:3000/graphql"
     #[serde(default)]
     base_url: String,
     #[serde(default)]
@@ -74,15 +75,21 @@ enum Commands {
 
 #[derive(Subcommand, Debug)]
 enum AuthCommand {
-    /// Authenticate and store token locally
+    /// Register a new user (bootstrap) and store the token locally
+    ///
+    /// This calls the GraphQL mutation `registerUser` and saves the
+    /// returned access token in config.toml.
     Login {
-        /// Email used to authenticate
+        /// User name
+        #[arg(long)]
+        name: Option<String>,
+        /// Email used to register
         #[arg(long)]
         email: Option<String>,
-        /// Password used to authenticate
+        /// Password used to register
         #[arg(long)]
         password: Option<String>,
-        /// API base URL (override default)
+        /// GraphQL endpoint (override default)
         #[arg(long)]
         base_url: Option<String>,
     },
@@ -100,6 +107,8 @@ enum OrgCommand {
         name: String,
         #[arg(long)]
         slug: String,
+        #[arg(long)]
+        description: Option<String>,
     },
     /// Set current organization in the local session
     Use {
@@ -120,6 +129,8 @@ enum TeamCommand {
         name: String,
         #[arg(long)]
         slug: String,
+        #[arg(long)]
+        description: Option<String>,
     },
     /// Set current team in the local session
     Use {
@@ -143,6 +154,9 @@ enum ContextCommand {
 #[derive(Subcommand, Debug)]
 enum AppCommand {
     /// Create a new application in the current org/team (requires auth + org + team)
+    ///
+    /// NOTE: Not implemented in the GraphQL schema yet. This command
+    /// will currently return an error.
     Create {
         #[arg(long)]
         name: String,
@@ -231,169 +245,315 @@ fn save_session(sess: &Session) -> Result<()> {
 }
 
 // -------------
-// API DTO stubs
+// GraphQL types
 // -------------
 
+#[derive(Debug, Serialize)]
+struct GqlRequest<V> {
+    query: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    variables: Option<V>,
+}
+
 #[derive(Debug, Deserialize)]
-struct LoginResponse {
+struct GqlResponse<D> {
+    data: Option<D>,
+    errors: Option<Vec<GqlError>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GqlError {
+    message: String,
+    // You can extend with locations, path, extensions, etc.
+}
+
+// ---- registerUser ----
+
+#[derive(Debug, Serialize)]
+struct RegisterUserVariables<'a> {
+    input: RegisterUserInput<'a>,
+}
+
+#[derive(Debug, Serialize)]
+struct RegisterUserInput<'a> {
+    name: &'a str,
+    email: &'a str,
+    password: &'a str,
+}
+
+#[derive(Debug, Deserialize)]
+struct RegisterUserData {
+    registerUser: RegisterUserPayload,
+}
+
+#[derive(Debug, Deserialize)]
+struct RegisterUserPayload {
+    user: GqlUser,
+    token: AccessToken,
+}
+
+#[derive(Debug, Deserialize)]
+struct GqlUser {
+    id: i32,
+    name: String,
+    email: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct AccessToken {
     token: String,
-    // you can extend with user info
+    description: Option<String>,
+}
+
+// ---- createOrganization ----
+
+#[derive(Debug, Serialize)]
+struct CreateOrganizationVariables<'a> {
+    input: CreateOrganizationInput<'a>,
+}
+
+#[derive(Debug, Serialize)]
+struct CreateOrganizationInput<'a> {
+    name: &'a str,
+    slug: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<&'a str>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateOrganizationData {
+    createOrganization: OrganizationResponse,
 }
 
 #[derive(Debug, Deserialize)]
 struct OrganizationResponse {
-    id: i64,
+    id: i32,
     name: String,
     slug: String,
+    description: Option<String>,
+}
+
+// ---- createTeam ----
+
+#[derive(Debug, Serialize)]
+struct CreateTeamVariables<'a> {
+    input: CreateTeamInput<'a>,
+}
+
+#[derive(Debug, Serialize)]
+struct CreateTeamInput<'a> {
+    organizationId: i32,
+    name: &'a str,
+    slug: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<&'a str>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CreateTeamData {
+    createTeam: TeamResponse,
 }
 
 #[derive(Debug, Deserialize)]
 struct TeamResponse {
-    id: i64,
+    id: i32,
+    organizationId: i32,
     name: String,
     slug: String,
+    description: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-struct AppResponse {
-    id: i64,
-    name: String,
-    slug: String,
+// -----------------
+// GraphQL documents
+// -----------------
+
+static REGISTER_USER_MUTATION: &str = r#"
+mutation RegisterUser($input: RegisterUserInput!) {
+  registerUser(input: $input) {
+    user {
+      id
+      name
+      email
+    }
+    token {
+      token
+      description
+    }
+  }
 }
+"#;
+
+static CREATE_ORGANIZATION_MUTATION: &str = r#"
+mutation CreateOrganization($input: CreateOrganizationInput!) {
+  createOrganization(input: $input) {
+    id
+    name
+    slug
+    description
+  }
+}
+"#;
+
+static CREATE_TEAM_MUTATION: &str = r#"
+mutation CreateTeam($input: CreateTeamInput!) {
+  createTeam(input: $input) {
+    id
+    organizationId
+    name
+    slug
+    description
+  }
+}
+"#;
 
 // -----------------
 // API call helpers
 // -----------------
 
-async fn api_login(
+async fn gql_register_user(
     client: &Client,
     base_url: &str,
+    name: &str,
     email: &str,
     password: &str,
-) -> Result<LoginResponse> {
-    // TODO: replace with your real REST/GraphQL call.
-    // This is just a stub structure to show where you integrate.
+) -> Result<RegisterUserPayload> {
+    let req_body = GqlRequest {
+        query: REGISTER_USER_MUTATION,
+        variables: Some(RegisterUserVariables {
+            input: RegisterUserInput { name, email, password },
+        }),
+    };
 
-    #[derive(Serialize)]
-    struct Payload<'a> {
-        email: &'a str,
-        password: &'a str,
-    }
-
-    let url = format!("{}/auth/login", base_url.trim_end_matches('/'));
     let res = client
-        .post(&url)
-        .json(&Payload { email, password })
+        .post(base_url)
+        .json(&req_body)
         .send()
         .await
-        .context("Failed to send login request")?;
+        .context("Failed to send registerUser GraphQL request")?;
 
     if !res.status().is_success() {
-        anyhow::bail!("Login failed with status {}", res.status());
+        anyhow::bail!("registerUser failed with HTTP status {}", res.status());
     }
 
-    let body: LoginResponse =
-        res.json().await.context("Failed to parse login response")?;
-    Ok(body)
+    let gql: GqlResponse<RegisterUserData> = res
+        .json()
+        .await
+        .context("Failed to parse GraphQL response for registerUser")?;
+
+    if let Some(errors) = gql.errors {
+        let msg = errors
+            .into_iter()
+            .map(|e| e.message)
+            .collect::<Vec<_>>()
+            .join("; ");
+        anyhow::bail!("GraphQL error(s): {msg}");
+    }
+
+    let data = gql
+        .data
+        .ok_or_else(|| anyhow::anyhow!("Missing data in GraphQL response"))?;
+    Ok(data.registerUser)
 }
 
-async fn api_create_org(
+async fn gql_create_org(
     client: &Client,
     cfg: &Config,
     name: &str,
     slug: &str,
+    description: Option<&str>,
 ) -> Result<OrganizationResponse> {
-    #[derive(Serialize)]
-    struct Payload<'a> {
-        name: &'a str,
-        slug: &'a str,
-    }
+    let req_body = GqlRequest {
+        query: CREATE_ORGANIZATION_MUTATION,
+        variables: Some(CreateOrganizationVariables {
+            input: CreateOrganizationInput { name, slug, description },
+        }),
+    };
 
-    let url = format!("{}/orgs", cfg.auth.base_url.trim_end_matches('/'));
     let res = client
-        .post(&url)
+        .post(&cfg.auth.base_url)
         .bearer_auth(&cfg.auth.token)
-        .json(&Payload { name, slug })
+        .json(&req_body)
         .send()
         .await
-        .context("Failed to send create org request")?;
+        .context("Failed to send createOrganization GraphQL request")?;
 
     if !res.status().is_success() {
-        anyhow::bail!("Create org failed with status {}", res.status());
+        anyhow::bail!(
+            "createOrganization failed with HTTP status {}",
+            res.status()
+        );
     }
 
-    let body: OrganizationResponse =
-        res.json().await.context("Failed to parse org response")?;
-    Ok(body)
+    let gql: GqlResponse<CreateOrganizationData> = res
+        .json()
+        .await
+        .context("Failed to parse GraphQL response for createOrganization")?;
+
+    if let Some(errors) = gql.errors {
+        let msg = errors
+            .into_iter()
+            .map(|e| e.message)
+            .collect::<Vec<_>>()
+            .join("; ");
+        anyhow::bail!("GraphQL error(s): {msg}");
+    }
+
+    let data = gql
+        .data
+        .ok_or_else(|| anyhow::anyhow!("Missing data in GraphQL response"))?;
+    Ok(data.createOrganization)
 }
 
-async fn api_create_team(
+async fn gql_create_team(
     client: &Client,
     cfg: &Config,
     org_id: i64,
     name: &str,
     slug: &str,
+    description: Option<&str>,
 ) -> Result<TeamResponse> {
-    #[derive(Serialize)]
-    struct Payload<'a> {
-        org_id: i64,
-        name: &'a str,
-        slug: &'a str,
-    }
+    let req_body = GqlRequest {
+        query: CREATE_TEAM_MUTATION,
+        variables: Some(CreateTeamVariables {
+            input: CreateTeamInput {
+                organizationId: org_id as i32,
+                name,
+                slug,
+                description,
+            },
+        }),
+    };
 
-    let url = format!("{}/teams", cfg.auth.base_url.trim_end_matches('/'));
     let res = client
-        .post(&url)
+        .post(&cfg.auth.base_url)
         .bearer_auth(&cfg.auth.token)
-        .json(&Payload { org_id, name, slug })
+        .json(&req_body)
         .send()
         .await
-        .context("Failed to send create team request")?;
+        .context("Failed to send createTeam GraphQL request")?;
 
     if !res.status().is_success() {
-        anyhow::bail!("Create team failed with status {}", res.status());
+        anyhow::bail!("createTeam failed with HTTP status {}", res.status());
     }
 
-    let body: TeamResponse =
-        res.json().await.context("Failed to parse team response")?;
-    Ok(body)
-}
-
-async fn api_create_app(
-    client: &Client,
-    cfg: &Config,
-    org_id: i64,
-    team_id: i64,
-    name: &str,
-    slug: &str,
-    runtime: Option<&str>,
-) -> Result<AppResponse> {
-    #[derive(Serialize)]
-    struct Payload<'a> {
-        org_id: i64,
-        team_id: i64,
-        name: &'a str,
-        slug: &'a str,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        runtime: Option<&'a str>,
-    }
-
-    let url = format!("{}/apps", cfg.auth.base_url.trim_end_matches('/'));
-    let res = client
-        .post(&url)
-        .bearer_auth(&cfg.auth.token)
-        .json(&Payload { org_id, team_id, name, slug, runtime })
-        .send()
+    let gql: GqlResponse<CreateTeamData> = res
+        .json()
         .await
-        .context("Failed to send create app request")?;
+        .context("Failed to parse GraphQL response for createTeam")?;
 
-    if !res.status().is_success() {
-        anyhow::bail!("Create app failed with status {}", res.status());
+    if let Some(errors) = gql.errors {
+        let msg = errors
+            .into_iter()
+            .map(|e| e.message)
+            .collect::<Vec<_>>()
+            .join("; ");
+        anyhow::bail!("GraphQL error(s): {msg}");
     }
 
-    let body: AppResponse =
-        res.json().await.context("Failed to parse app response")?;
-    Ok(body)
+    let data = gql
+        .data
+        .ok_or_else(|| anyhow::anyhow!("Missing data in GraphQL response"))?;
+    Ok(data.createTeam)
 }
 
 // --------------------
@@ -422,14 +582,19 @@ async fn main() -> Result<()> {
 
 async fn handle_auth(cmd: AuthCommand, client: &Client) -> Result<()> {
     match cmd {
-        AuthCommand::Login { email, password, base_url } => {
+        AuthCommand::Login { name, email, password, base_url } => {
+            let name = match name {
+                Some(v) => v,
+                None => prompt("Name: ")?,
+            };
+
             let email = match email {
-                Some(e) => e,
+                Some(v) => v,
                 None => prompt("Email: ")?,
             };
 
             let password = match password {
-                Some(p) => p,
+                Some(v) => v,
                 None => prompt_password("Password: ")?,
             };
 
@@ -438,19 +603,29 @@ async fn handle_auth(cmd: AuthCommand, client: &Client) -> Result<()> {
             if let Some(base) = base_url {
                 cfg.auth.base_url = base;
             } else if cfg.auth.base_url.is_empty() {
-                // default base URL if nothing set
-                cfg.auth.base_url = "http://localhost:3000".to_string();
+                // default GraphQL endpoint
+                cfg.auth.base_url =
+                    "http://localhost:3000/graphql".to_string();
             }
 
-            let res = api_login(client, &cfg.auth.base_url, &email, &password)
-                .await?;
-            cfg.auth.token = res.token;
+            let payload = gql_register_user(
+                client,
+                &cfg.auth.base_url,
+                &name,
+                &email,
+                &password,
+            )
+            .await?;
 
+            cfg.auth.token = payload.token.token;
             save_config(&cfg)?;
-            // clear session when logging in
+            // clear session when logging in/registering
             save_session(&Session::default())?;
 
-            println!("Login successful!");
+            println!(
+                "User registered and logged in as {} ({})",
+                payload.user.name, payload.user.email
+            );
         }
         AuthCommand::Logout => {
             let mut cfg = load_config().unwrap_or_default();
@@ -464,7 +639,7 @@ async fn handle_auth(cmd: AuthCommand, client: &Client) -> Result<()> {
                 println!("Not authenticated. Run `paastel auth login` first.");
             } else {
                 println!("Authenticated.");
-                println!("Base URL: {}", cfg.auth.base_url);
+                println!("GraphQL endpoint: {}", cfg.auth.base_url);
                 println!("Token: present");
             }
         }
@@ -478,9 +653,16 @@ async fn handle_auth(cmd: AuthCommand, client: &Client) -> Result<()> {
 
 async fn handle_org(cmd: OrgCommand, client: &Client) -> Result<()> {
     match cmd {
-        OrgCommand::Create { name, slug } => {
+        OrgCommand::Create { name, slug, description } => {
             let cfg = ensure_authenticated()?;
-            let org = api_create_org(client, &cfg, &name, &slug).await?;
+            let org = gql_create_org(
+                client,
+                &cfg,
+                &name,
+                &slug,
+                description.as_deref(),
+            )
+            .await?;
 
             println!(
                 "Organization created: {} (id: {}, slug: {})",
@@ -489,7 +671,7 @@ async fn handle_org(cmd: OrgCommand, client: &Client) -> Result<()> {
 
             // set as current context
             let mut sess = load_session().unwrap_or_default();
-            sess.context.organization_id = Some(org.id);
+            sess.context.organization_id = Some(org.id as i64);
             sess.context.organization_slug = Some(org.slug);
             // when we change org, we can reset team
             sess.context.team_id = None;
@@ -539,7 +721,7 @@ async fn handle_org(cmd: OrgCommand, client: &Client) -> Result<()> {
 
 async fn handle_team(cmd: TeamCommand, client: &Client) -> Result<()> {
     match cmd {
-        TeamCommand::Create { name, slug } => {
+        TeamCommand::Create { name, slug, description } => {
             let cfg = ensure_authenticated()?;
             let sess = load_session().unwrap_or_default();
 
@@ -549,8 +731,15 @@ async fn handle_team(cmd: TeamCommand, client: &Client) -> Result<()> {
                 )
             })?;
 
-            let team =
-                api_create_team(client, &cfg, org_id, &name, &slug).await?;
+            let team = gql_create_team(
+                client,
+                &cfg,
+                org_id,
+                &name,
+                &slug,
+                description.as_deref(),
+            )
+            .await?;
 
             println!(
                 "Team created: {} (id: {}, slug: {})",
@@ -558,7 +747,7 @@ async fn handle_team(cmd: TeamCommand, client: &Client) -> Result<()> {
             );
 
             let mut sess = sess;
-            sess.context.team_id = Some(team.id);
+            sess.context.team_id = Some(team.id as i64);
             sess.context.team_slug = Some(team.slug);
             save_session(&sess)?;
             println!("Team set as current context.");
@@ -612,7 +801,7 @@ fn handle_context(cmd: ContextCommand) -> Result<()> {
                 println!("  Status      : not authenticated");
             } else {
                 println!("  Status      : authenticated");
-                println!("  Base URL    : {}", cfg.auth.base_url);
+                println!("  Endpoint    : {}", cfg.auth.base_url);
             }
 
             println!();
@@ -670,42 +859,15 @@ fn handle_context(cmd: ContextCommand) -> Result<()> {
 // App handler
 // -------------
 
-async fn handle_app(cmd: AppCommand, client: &Client) -> Result<()> {
+async fn handle_app(cmd: AppCommand, _client: &Client) -> Result<()> {
     match cmd {
-        AppCommand::Create { name, slug, runtime } => {
-            let cfg = ensure_authenticated()?;
-            let sess = load_session().unwrap_or_default();
-
-            let org_id = sess.context.organization_id.ok_or_else(|| {
-                anyhow::anyhow!(
-                    "No organization selected. Use `paastel org use` first."
-                )
-            })?;
-            let team_id = sess.context.team_id.ok_or_else(|| {
-                anyhow::anyhow!(
-                    "No team selected. Use `paastel team use` first."
-                )
-            })?;
-
-            let app = api_create_app(
-                client,
-                &cfg,
-                org_id,
-                team_id,
-                &name,
-                &slug,
-                runtime.as_deref(),
-            )
-            .await?;
-
-            println!(
-                "Application created: {} (id: {}, slug: {})",
-                app.name, app.id, app.slug
+        AppCommand::Create { .. } => {
+            anyhow::bail!(
+                "App creation is not implemented in the GraphQL schema yet. \
+                 Once you add a createApp mutation, we can wire it here."
             );
         }
     }
-
-    Ok(())
 }
 
 // -------------------------
@@ -721,7 +883,7 @@ fn ensure_authenticated() -> Result<Config> {
     }
     if cfg.auth.base_url.is_empty() {
         anyhow::bail!(
-            "Base URL is not configured. Set it during login or in config.toml."
+            "GraphQL endpoint is not configured. Set it during login or in config.toml."
         );
     }
     Ok(cfg)
