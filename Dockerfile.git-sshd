@@ -1,0 +1,53 @@
+# Stage 1: build the paastel-git-shell binary
+FROM rust:1.91-bullseye AS builder
+
+WORKDIR /usr/src/paastel
+# Copy your project (adjust if your CLI is in a sub-crate/workspace)
+COPY . .
+
+# Build only the git-shell binary
+RUN cargo build --bin paastel-git-shell --release
+
+# Stage 2: runtime image with sshd + git + paastel-git-shell
+FROM debian:bookworm-slim
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        openssh-server \
+        git && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create git user
+RUN useradd -m -d /home/git -s /bin/bash git
+
+# Git root directory (shared via volume)
+RUN mkdir -p /var/lib/paastel/git && \
+    chown -R git:git /var/lib/paastel/git
+
+# SSH runtime dirs
+RUN mkdir -p /var/run/sshd
+
+# Copy the binary from builder
+COPY --from=builder /usr/src/paastel/target/release/paastel-git-shell /usr/local/bin/paastel-git-shell
+RUN chmod 755 /usr/local/bin/paastel-git-shell
+
+# SSH configuration
+COPY docker/sshd_config /etc/ssh/sshd_config
+
+# Authorized keys for user git
+RUN mkdir -p /home/git/.ssh && \
+    chown -R git:git /home/git/.ssh && \
+    chmod 700 /home/git/.ssh
+
+COPY docker/git_authorized_keys /home/git/.ssh/authorized_keys
+RUN chown git:git /home/git/.ssh/authorized_keys && \
+    chmod 600 /home/git/.ssh/authorized_keys
+
+# Generate host keys (rsa/ed25519/etc.)
+RUN ssh-keygen -A
+
+EXPOSE 22
+
+# Run sshd in foreground
+CMD ["/usr/sbin/sshd", "-D", "-e"]
+

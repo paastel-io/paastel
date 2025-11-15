@@ -1,8 +1,22 @@
 services:
+  git:
+    build:
+      context: .
+      dockerfile: Dockerfile.git-sshd
+    container_name: paastel-git
+    restart: unless-stopped
+    ports:
+      - "2222:22"
+    environment:
+      # Optional: explicit git root for paastel-git-shell
+      - PAASTEL_GIT_ROOT=/var/paastel/git
+    volumes:
+      # Local directory to persist bare repos
+      - git_data:/var/paastel/git
   db:
     image: postgres:18-alpine3.22
     container_name: db
-    restart: always
+    restart: unless-stopped
     shm_size: 128mb
     environment:
       POSTGRES_DB: paastel
@@ -15,3 +29,4 @@ services:
 
 volumes:
   db_data:
+  git_data:

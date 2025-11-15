@@ -1,0 +1,36 @@
+Port 22
+Protocol 2
+
+HostKey /etc/ssh/ssh_host_ed25519_key
+HostKey /etc/ssh/ssh_host_rsa_key
+
+UsePrivilegeSeparation sandbox
+SyslogFacility AUTH
+LogLevel INFO
+
+LoginGraceTime 30
+PermitRootLogin no
+StrictModes yes
+
+PasswordAuthentication no
+ChallengeResponseAuthentication no
+UsePAM no
+PermitEmptyPasswords no
+
+PubkeyAuthentication yes
+AuthorizedKeysFile  .ssh/authorized_keys
+
+AllowUsers git
+
+X11Forwarding no
+AllowTcpForwarding no
+PermitTunnel no
+
+Subsystem sftp /usr/lib/openssh/sftp-server
+
+Match User git
+    ForceCommand /usr/local/bin/paastel-git-shell
+    AllowTcpForwarding no
+    X11Forwarding no
+    PermitTTY no
+

@@ -41,3 +41,9 @@ name = "export-schema"
 path = "src/bin/export_schema.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "paastel-git-shell"
+path = "src/bin/git_shell.rs"
+test = false
+doc = false
