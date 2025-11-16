@@ -20,20 +20,24 @@ fn run() -> Result<()> {
     let original_command = match env::var("SSH_ORIGINAL_COMMAND").ok() {
         Some(cmd) => cmd,
         None => {
-            eprintln!("PaaStel git endpoint. Interactive shell is not available.");
+            eprintln!(
+                "PaaStel git endpoint. Interactive shell is not available."
+            );
             return Ok(());
         }
     };
 
     let (git_cmd, repo_path_raw) = parse_git_command(&original_command)?;
 
-    let root = env::var("PAASTEL_GIT_ROOT").unwrap_or_else(|_| DEFAULT_GIT_ROOT.to_string());
+    let root = env::var("PAASTEL_GIT_ROOT")
+        .unwrap_or_else(|_| DEFAULT_GIT_ROOT.to_string());
     let repo_rel = sanitize_repo_path(&repo_path_raw)?;
     let repo_full = Path::new(&root).join(repo_rel);
 
     if let Some(parent) = repo_full.parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("Failed to create parent dir {}", parent.display()))?;
+        fs::create_dir_all(parent).with_context(|| {
+            format!("Failed to create parent dir {}", parent.display())
+        })?;
     }
 
     if git_cmd == "git-receive-pack" && !repo_full.exists() {
